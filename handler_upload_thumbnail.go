@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -41,7 +43,9 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	mediaType, _, err := mime.ParseMediaType(thumbnailHeader.Header.Get("Content-Type"))
 
-	if mediaType != "image/jpeg" || mediaType != "image/png" {
+	fmt.Printf("MediaType: %s\n", mediaType)
+
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
 		respondWithError(w, http.StatusBadRequest, "Invalid media type for thumbnail", err)
 		return
 	}
@@ -57,8 +61,12 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 
 	thumbnailFileExtension := strings.Split(mediaType, "/")[1]
-	fmt.Printf("%s\n", thumbnailFileExtension)
-	thumbnailFilePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoID.String(), thumbnailFileExtension))
+
+	randomBytes := make([]byte, 32)
+	rand.Read(randomBytes)
+	thumbnailFileName := base64.RawURLEncoding.EncodeToString(randomBytes)
+
+	thumbnailFilePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", thumbnailFileName, thumbnailFileExtension))
 
 	newThumbnailFile, err := os.Create(thumbnailFilePath)
 
@@ -72,7 +80,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	thumbnailUrl := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, videoID.String(), thumbnailFileExtension)
+	thumbnailUrl := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, thumbnailFileName, thumbnailFileExtension)
 	video.ThumbnailURL = &thumbnailUrl
 
 	cfg.db.UpdateVideo(video)

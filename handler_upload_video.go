@@ -96,6 +96,21 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	preprocessedVideoPath, err := ProcessVideoForFastStart(tempVideoFile.Name())
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error(), err)
+		return
+	}
+
+	processedVideo, err := os.Open(preprocessedVideoPath)
+	defer processedVideo.Close()
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to open processed video", err)
+		return
+	}
+
 	buf := make([]byte, 32)
 	rand.Read(buf)
 
@@ -104,17 +119,21 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &fileKey,
-		Body:        tempVideoFile,
+		Body:        processedVideo,
 		ContentType: &mediaType,
 	})
 
-	videoFileUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, fileKey)
+	videoFileUrl := fmt.Sprintf("%s,%s", cfg.s3Bucket, fileKey)
 
 	video.VideoURL = &videoFileUrl
 	if err := cfg.db.UpdateVideo(video); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update video", err)
 		return
 	}
-
-	respondWithJSON(w, http.StatusOK, video)
+	videoWithPresignedUrl, err := cfg.dbVideoToSignedVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error(), err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, videoWithPresignedUrl)
 }

@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -25,6 +28,27 @@ type apiConfig struct {
 	s3CfDistribution string
 	port             string
 	s3Client         *s3.Client
+}
+
+func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	videoUrl := video.VideoURL
+	videoUrlTokens := strings.Split(*videoUrl, ",")
+
+	if len(videoUrlTokens) != 2 {
+		return video, errors.New("Invalid video url, video url should contain bucket and file key")
+	}
+	bucket := videoUrlTokens[0]
+	fileKey := videoUrlTokens[1]
+
+	presignedUrl, err := GeneratePresignedURL(cfg.s3Client, bucket, fileKey, 15*time.Minute)
+
+	if err != nil {
+		return video, err
+	}
+
+	video.VideoURL = &presignedUrl
+
+	return video, nil
 }
 
 type thumbnail struct {
